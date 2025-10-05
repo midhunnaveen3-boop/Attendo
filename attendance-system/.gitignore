@@ -1,0 +1,42 @@
+# Java
+.class
+*.class
+
+# Maven
+/target/
+/pom.xml.tag
+/pom.xml.releaseBackup
+/pom.xml.versionsBackup
+/release.properties
+
+# IntelliJ
+/.idea/
+*.iml
+*.iws
+
+# VS Code
+/.vscode/
+
+# Eclipse
+.project
+.classpath
+.settings/
+
+# Mac
+.DS_Store
+
+# Windows
+Thumbs.db
+desktop.ini
+
+# Logs
+.log
+
+# SQLite DB file
+attendance.db
+
+# Libraries
+/lib/
+
+# Runner outputs
+/out/

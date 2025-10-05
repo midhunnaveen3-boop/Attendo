@@ -1,0 +1,320 @@
+Attendance Management System - Project Report
+===========================================
+
+Generated: 2025-10-04 (updated)
+
+Overview
+--------
+This project is a prototype Attendance Management System built in Java with Swing (desktop GUI) and SQLite as the default backend. It implements three user roles (admin, teacher, student) and core functionality: authentication, student/teacher management, marking attendance, computing attendance percentages, and basic reporting. The code has been incrementally refactored during development to improve object-oriented design and separation of concerns. This report documents the full project, recent refactors (service layer, UI improvements), file responsibilities, design analysis, running instructions, known limitations, and recommended next steps.
+
+Latest updates (summary)
+------------------------
+- Added a service layer:
+  - `com.attendance.service.UserService` — authentication logic now derives the role from the database and returns it to the UI.
+  - `com.attendance.service.AttendanceService` — centralizes attendance-related operations (marking batches, queries, counts).
+- UI changes:
+  - `LoginFrame` no longer has a role selector; it derives the authenticated user's role from the DB and routes accordingly.
+  - `AdminDashboard`, `TeacherDashboard`, and `StudentDashboard` now include a Logout button that returns the user to the login screen.
+  - `TeacherDashboard` now provides date and subject inputs so teachers can mark attendance for any date (format yyyy-MM-dd) instead of always using today's date.
+- Tools & runner improvements:
+  - `ResetAdmin` utility added to create/update admin credentials from the command-line.
+  - `run.ps1` updated to robustly locate `javac`/`java` (checks PATH and common JDK install locations), download missing jars into `lib/`, compile sources into `out/`, and launch the app.
+  - `run.bat` is a thin wrapper to call `run.ps1` for Windows convenience.
+
+Top-level file / folder overview
+--------------------------------
+- `pom.xml` — Maven project descriptor (dependencies include sqlite-jdbc and commons-csv). Compiler target set to Java 1.8.
+- `README.md` — Quick start and notes.
+- `REPORT.txt` — This document (now updated).
+- `run.ps1`, `run.bat` — Build and run helpers (PowerShell and batch wrapper).
+- `lib/` — External jars (downloaded by `run.ps1` if missing): sqlite-jdbc and commons-csv.
+- `out/` — Compiled classes (created by runner).
+- `src/main/java/com/attendance/` — Java sources, organized into packages: `dao`, `model`, `service`, `ui`, `tools`.
+
+Per-package and per-file responsibilities (updated)
+-------------------------------------------------
+Root package
+- `DatabaseConnection.java`
+  - Responsibility: initializes and provides the SQLite JDBC connection. Current API is static (getConnection(), initDatabase()). Consider making this injectable (see next steps).
+
+- `Main.java`
+  - Program entrypoint. Calls DatabaseConnection.initDatabase(); launches the `LoginFrame` on the EDT.
+
+Model package (`com.attendance.model`)
+- `User.java` — simple POJO (userId, password, role).
+- `Student.java` — student data holder (studentId, name, className, rollNo).
+- `Teacher.java` — teacher data holder (teacherId, name, subject).
+- `AttendanceRecord.java` — attendance data holder (id, studentId, date, status, subject).
+
+DAO package (`com.attendance.dao`)
+- `UserDAO.java`, `StudentDAO.java`, `TeacherDAO.java`, `AttendanceDAO.java` — contain the SQL and access logic. NOTE: these currently use static methods. The codebase was refactored to introduce a service layer, but DAO classes remain static; converting them into interface-based injectable DAOs is a recommended next step to further improve OO design.
+
+Service package (`com.attendance.service`) — new
+- `UserService.java`
+  - Authenticates users and returns the role on successful credentials. This replaces UI-side role selection and centralizes the login business rule.
+- `AttendanceService.java`
+  - Accepts lists of attendance records to mark and forwards to `AttendanceDAO`. Provides count and query operations for the UI.
+
+UI package (`com.attendance.ui`)
+- `LoginFrame.java`
+  - Login screen; now queries `UserService` which returns the role (so role selector is removed). On success it opens the right dashboard and disposes the login window.
+- `AdminDashboard.java`
+  - Manage Students/Teachers and view reports. Now includes a Logout button at the bottom that returns to the login screen.
+- `TeacherDashboard.java`
+  - Load students and mark attendance. Now has explicit Date and Subject inputs and a Logout button.
+  - Uses `AttendanceService` to perform marking instead of calling `AttendanceDAO` directly from the UI.
+- `StudentDashboard.java`
+  - View own attendance and percentage. Uses `AttendanceService` instead of `AttendanceDAO`.
+
+Tools (`com.attendance.tools`)
+- `ResetAdmin.java` — CLI tool to create or update an admin user quickly: `java com.attendance.tools.ResetAdmin <userId> <password>`.
+
+Database schema (unchanged)
+---------------------------
+- `users(user_id TEXT PRIMARY KEY, password TEXT NOT NULL, role TEXT NOT NULL)`
+- `students(student_id TEXT PRIMARY KEY, name TEXT, class TEXT, roll_no INTEGER)`
+- `teachers(teacher_id TEXT PRIMARY KEY, name TEXT, subject TEXT)`
+- `attendance(id INTEGER PRIMARY KEY AUTOINCREMENT, student_id TEXT, date TEXT, status TEXT, subject TEXT, FOREIGN KEY(student_id) REFERENCES students(student_id))`
+
+High-level runtime flow (updated)
+---------------------------------
+1. `Main` starts, `DatabaseConnection.initDatabase()` ensures tables exist and a default admin exists.
+2. `LoginFrame` prompts for userId/password and calls `UserService.authenticate()`. The service returns the role string (admin/teacher/student) if credentials are valid.
+3. Based on the role, `LoginFrame` opens the Admin/Teacher/Student dashboard.
+4. Dashboards are thin UI layers; they call service methods for business logic (attendance marking, querying counts). Services delegate persistence to DAOs.
+
+Object-Oriented Design: current status
+------------------------------------
+What is OO now
+- Models are POJOs — data encapsulation is present.
+- Services encapsulate business logic (login/attendance) and offer a facade to the UI.
+- UI acts as a presentation layer; it no longer directly performs SQL in the login and attendance flows (where services are used).
+
+Remaining non-OO / procedural elements
+- DAOs are static-method oriented (procedural). Converting them to instance-based implementations behind interfaces (e.g., `IUserDao`) is recommended.
+- `DatabaseConnection` is static — better to refactor to an injectable connector or a connection factory for testability and loose coupling.
+- Role is still a string in the DB; a polymorphic `User` type hierarchy (Admin/Teacher/Student) is not yet implemented.
+
+Limitations and security notes (reminder)
+----------------------------------------
+- Passwords are stored plaintext in `users.password`. This remains a priority to fix by introducing secure hashing (BCrypt) and migrating current accounts via `ResetAdmin` or a forced reset.
+- No unit tests yet. Converting DAOs to interfaces will enable tests that mock persistence.
+
+Recent change log (files touched in the latest refactor)
+-----------------------------------------------------
+- Added: `src/main/java/com/attendance/service/UserService.java`
+- Added: `src/main/java/com/attendance/service/AttendanceService.java`
+- Modified: `src/main/java/com/attendance/ui/LoginFrame.java` (removed role selector; uses UserService)
+- Modified: `src/main/java/com/attendance/ui/TeacherDashboard.java` (date & subject inputs, Logout, uses AttendanceService)
+- Modified: `src/main/java/com/attendance/ui/StudentDashboard.java` (Logout, uses AttendanceService)
+- Modified: `src/main/java/com/attendance/ui/AdminDashboard.java` (Logout)
+- Added: `src/main/java/com/attendance/tools/ResetAdmin.java` (admin reset utility)
+- Added: `run.bat` (batch wrapper)
+- Modified: `run.ps1` (robust JDK detection, jar download, compile+run)
+
+Recommended next steps (prioritized)
+------------------------------------
+1. Convert DAOs to interfaces and implement `Sql*Dao` classes (IUserDao, IAttendanceDao, etc.) and inject them into services. This is the most impactful change to make the codebase fully OO and testable.
+2. Replace static `DatabaseConnection` with an injectable `DatabaseConnector` or connection factory.
+3. Implement password hashing (BCrypt) in `UserService`/`UserDAO` and add a migration path for existing plaintext passwords.
+4. Add unit and integration tests (JUnit) using an in-memory or temporary SQLite DB and mocked DAOs.
+5. Add CSV export (commons-csv already available) and optional charts (JFreeChart) for visualization.
+
+How to run the project now
+-------------------------
+1. PowerShell (recommended):
+   - Open PowerShell in the project root and run:
+     .\run.ps1
+2. Windows: double-click `run.bat` or run it from cmd. The script ensures required jars are downloaded and compiles sources.
+3. Default admin credentials: an `admin` user is created on first run. Use `ResetAdmin` to update credentials: e.g.,
+   java -cp "out;lib/*" com.attendance.tools.ResetAdmin admin admin123
+
+Final notes
+-----------
+The recent refactor meaningfully improved OO structure by adding a service layer and simplifying UI responsibilities. To call the project "completely object-oriented" we should next replace static DAOs and the static `DatabaseConnection` with interfaces and injected implementations. I can implement those changes next (DAO interfaces + Sql implementations + small `AppContext`) if you want — say "DAOs" and I will start the refactor and run the project after each major change.
+
+End of updated report.
+Attendance Management System - Project Report
+===========================================
+
+Generated: 2025-10-04
+
+Overview
+--------
+This project is a prototype Attendance Management System built in Java with Swing (desktop GUI) and SQLite as the default backend. It implements three user roles (admin, teacher, student) and basic functionality: authentication, student/teacher management, marking attendance, computing attendance percentages, and simple reporting. The goal of this report is to explain the file structure, each file's purpose, the code flow, object-oriented (OO) design choices, data model/schema, usage instructions, limitations, and recommended next steps.
+
+Quick run notes
+---------------
+- The project can be run via the provided `run.ps1` PowerShell script or `run.bat`.
+- Default admin credentials created on first run: `admin` / `admin` (the ResetAdmin tool was added during development and was used to set `admin` / `admin123` in some sessions).
+- The app uses `attendance.db` in the project root (SQLite) and will create the database and tables on first start.
+
+Top-level file / folder overview
+--------------------------------
+- pom.xml - Maven project descriptor (dependencies: sqlite-jdbc, commons-csv). Updated to Java 1.8 compatibility.
+- README.md - Quick instructions and notes.
+- REPORT.txt - This document.
+- run.ps1, run.bat - Convenience runner scripts: downloads jars if missing, compiles sources and launches Main.
+- lib/ - Directory where required JARs (sqlite-jdbc, commons-csv) are stored by the runner.
+- out/ - Build output (class files) produced when using the runner.
+- src/main/java/com/attendance/ - Java sources; structured into packages: dao, model, ui, tools (utility), and root package classes.
+
+Files and responsibilities (per file)
+------------------------------------
+Root package:
+- DatabaseConnection.java
+  - Responsibility: establish JDBC connection to SQLite (jdbc:sqlite:attendance.db), initialize the database schema (create tables if missing), and ensure a default admin user exists.
+  - Key methods: getConnection(), initDatabase().
+
+- Main.java
+  - Responsibility: application entry point. Calls DatabaseConnection.initDatabase() and launches the Swing Login frame.
+
+Model package (`com.attendance.model`): simple data holders (POJOs)
+- User.java
+  - Plain model representing a user record (userId, password, role).
+- Student.java
+  - Student model: studentId, name, className, rollNo.
+- Teacher.java
+  - Teacher model: teacherId, name, subject.
+- AttendanceRecord.java
+  - Attendance model (id, studentId, date, status, subject). Date stored as ISO string (yyyy-MM-dd).
+
+DAO package (`com.attendance.dao`): database access and domain operations
+- UserDAO.java
+  - Authentication and user management (createUser, updatePassword, deleteUser, authenticate).
+  - Currently passwords are stored plaintext; the file is the centralized place to add hashing.
+- StudentDAO.java
+  - CRUD operations for students (addStudent, listStudents, deleteStudent).
+- TeacherDAO.java
+  - CRUD operations for teachers (addTeacher, listTeachers, deleteTeacher).
+- AttendanceDAO.java
+  - Attendance operations: markAttendance (insert/replace behavior implemented via delete+insert), getAttendanceForStudent, getAttendanceByDate, countTotalClasses, countPresent.
+
+UI package (`com.attendance.ui`): Swing components and windows
+- LoginFrame.java
+  - Login screen with UserID, Password and Role selector (admin/teacher/student). Routes to appropriate dashboard on success.
+  - Uses UserDAO.authenticate to verify credentials.
+- AdminDashboard.java
+  - Tabbed UI: Students tab (add/delete students), Teachers tab (add teachers), Reports tab (summary list of students with attendance counts and percentage).
+  - Add student/teacher operations also create user accounts via UserDAO.
+  - Simple JTable usage for lists; actions open dialog boxes for input.
+- TeacherDashboard.java
+  - Load students (optionally filtered by class) into a table with a checkbox column to mark Present/Absent.
+  - Mark attendance for a date (currently prompts for subject and defaults date to today). After marking, attendance records are stored in `attendance` table via AttendanceDAO.markAttendance.
+  - Shows percentages via AttendanceDAO.countPresent/countTotalClasses.
+  - Note: a requested enhancement adds a date picker so teacher can choose date (I'll implement this change per your request).
+- StudentDashboard.java
+  - Allows a student to load their attendance records and view their overall percentage.
+
+Tools (`com.attendance.tools`)
+- ResetAdmin.java
+  - Lightweight command-line utility to create or update an admin account quickly (usage: java com.attendance.tools.ResetAdmin <user> <pass>). Useful when the GUI's login state prevents access.
+
+Runner scripts
+- run.ps1
+  - PowerShell script that downloads necessary jars to `lib/` if missing, compiles sources into `out/` using `javac`, and runs the specified main (default `com.attendance.Main`). Verifies `javac` is available.
+- run.bat
+  - Windows batch wrapper that invokes `run.ps1` with policy bypass for convenience.
+
+Database schema (created by DatabaseConnection.initDatabase):
+- users(user_id TEXT PRIMARY KEY, password TEXT NOT NULL, role TEXT NOT NULL)
+- students(student_id TEXT PRIMARY KEY, name TEXT, class TEXT, roll_no INTEGER)
+- teachers(teacher_id TEXT PRIMARY KEY, name TEXT, subject TEXT)
+- attendance(id INTEGER PRIMARY KEY AUTOINCREMENT, student_id TEXT, date TEXT, status TEXT, subject TEXT, FOREIGN KEY(student_id) REFERENCES students(student_id))
+
+High-level runtime flow
+-----------------------
+1. User runs the app (Main.launch). DatabaseConnection.initDatabase() ensures tables exist and default admin is present.
+2. LoginFrame collects credentials and role. On successful authenticate() via UserDAO, the appropriate dashboard frame is shown and LoginFrame disposed.
+3. Admin dashboard lets admin manage student/teacher records and create user accounts (AdminDashboard calls StudentDAO/TeacherDAO and UserDAO).
+4. Teacher dashboard loads students from StudentDAO and allows marking attendance (AttendanceDAO.markAttendance). The implemented approach deletes any existing attendance for the same student/date/subject before inserting, so marking is idempotent.
+5. Student dashboard retrieves attendance for the logged-in student (AttendanceDAO.getAttendanceForStudent) and computes percentage (AttendanceDAO.countPresent / countTotalClasses).
+
+Object-Oriented Design Analysis
+--------------------------------
+This prototype follows some OO principles but remains pragmatic and partly procedural in places. Analysis by principle:
+
+- Encapsulation:
+  - Models (POJOs) encapsulate fields with getters (no setters implemented); DAOs encapsulate SQL operations. UI classes manipulate DAOs rather than SQL directly — good separation.
+
+- Abstraction:
+  - DAOs provide a domain-level API abstracting SQL operations (create/list/delete). This separation leaves room to swap database implementations.
+
+- Inheritance:
+  - The code uses simple model inheritance only conceptually (User, Student, Teacher as separate models). There is no Java inheritance or polymorphic behavior between Admin/Teacher/Student classes — roles are represented as strings in the `users` table and UI frames are separate classes.
+
+- Polymorphism:
+  - Not extensively used. Could be improved by adding a `User` base class and subclassing `AdminUser`, `TeacherUser`, `StudentUser` with role-specific behavior.
+
+- Single Responsibility / Modularity:
+  - Files have focused responsibilities: DAO classes perform DB operations, UI classes handle presentation and user events, and models hold data. This is reasonably clean for a small project.
+
+- Coupling & Cohesion:
+  - Coupling is moderate: UI classes depend on DAOs and model classes. DAOs depend on DatabaseConnection. The dependency graph is straightforward. Cohesion inside each class is acceptable.
+
+Areas where OO design can be improved
+------------------------------------
+- Introduce service layer between UI and DAOs (e.g., AttendanceService) to encapsulate business logic (e.g., date normalization, validation, transaction boundaries).
+- Use interfaces for DAOs (UserDAO -> IUserDAO) and provide implementations, enabling easier unit testing and swapping storage engines.
+- Implement a User class hierarchy with polymorphic login routing and role-based authorization checks.
+- Avoid storing plaintext passwords — introduce a PasswordService that handles hashing (BCrypt) and verifying.
+
+Key code logic decisions and notes
+---------------------------------
+- Attendance marking overwrites same student/date/subject records by deleting prior records before inserting the new record. This is simple but not optimal for audit/history.
+- Dates are stored as ISO yyyy-MM-dd strings: simple and readable, but lacks timezone handling and normalized datatypes. Using DATE types in MySQL or storing timestamps in ISO-8601 would be better in a production system.
+- Error handling is basic: most DAO methods throw SQLException and the UI catches exceptions and shows messages. Consider adding more user-friendly error messages and recoverable flows.
+
+Limitations and known issues
+----------------------------
+- Passwords stored plaintext (security risk): must be hashed before production use.
+- No role-based UI authorization beyond selecting a role at login — the login UI lets a user attempt to log in with a role; the system authenticates against that role. Consider deriving role from stored user record rather than a UI selector.
+- No concurrency handling for attendance marking; race conditions are unlikely in a single-user Swing app but would matter in multi-user server deployments.
+- Reporting is limited: there are basic counts and per-student percentages only. No export or printable reports by default (commons-csv is present and can be used to add CSV export). Graphing is not implemented.
+- No tests. Unit tests or basic integration tests would improve maintainability.
+
+Suggested immediate improvements (low risk)
+-----------------------------------------
+1. Add logout option to all dashboards (simple UI change) — done in the next update you requested.
+2. Add date-picker control (JDatePicker or simple text + validation) in TeacherDashboard to choose attendance date (you requested this) — simple UI addition.
+3. Add password hashing (BCrypt) in UserDAO (replace plaintext storage) — requires migrating existing passwords or forcing resets.
+4. Add CSV export for reports using commons-csv (already added to pom).
+
+Suggested architectural improvements (medium effort)
+--------------------------------------------------
+- Introduce a service layer (AttendanceService, UserService) for business rules.
+- Add DAO interfaces + factory for easier testing and potential DB switch (e.g., MySQL adapter).
+- Add unit tests (JUnit) for DAOs against an in-memory SQLite DB and for service logic.
+- Create a small role-based authorization system: after authentication, determine the role from the DB and only show allowed UI; remove role selection from login.
+- Implement a persistence migration scheme (Flyway-like) or maintain SQL migration files rather than ad-hoc init scripts.
+
+How to mark attendance now (quick guide)
+--------------------------------------
+1. Run the app via `.
+un.ps1` or `run.bat`.
+2. Login as a teacher (or `admin` as teacher by creating a teacher user) — default admin exists. Use `ResetAdmin` to set admin password if needed.
+3. In the Teacher Dashboard: load students (optionally filter by class). Check/uncheck the Present checkbox and click "Mark Attendance for Today". The UI currently asks for the subject and uses today's date; you requested a date selector — will add.
+
+Files to inspect for further modifications
+----------------------------------------
+- `src/main/java/com/attendance/ui/TeacherDashboard.java` — add date picker and logout button here.
+- `src/main/java/com/attendance/ui/AdminDashboard.java` — add logout option.
+- `src/main/java/com/attendance/dao/UserDAO.java` — add password hashing and role-only-from-db logic.
+- `src/main/java/com/attendance/DatabaseConnection.java` — consider changing DB URL to use a config file or environment variable for MySQL.
+
+Conclusion
+----------
+This project is a functioning prototype with clear modular separation between models, DAOs, and UI. It uses JDBC and Swing and is easy to extend. It is not fully object-oriented in a deep OO sense (limited use of inheritance and polymorphism), but it follows many practical OO practices: encapsulation via DAOs and models, modular responsibilities, and reuseable components.
+
+Next steps I can implement for you now (pick any/all):
+- Add logout buttons and date picker in TeacherDashboard (small UI change) — recommended.
+- Replace plaintext password storage with BCrypt hashing (UserDAO + Reset tool migration).
+- Add CSV export for reports (Admin Dashboard Reports tab).
+- Add a menu to reset admin credentials from the UI.
+- Add a small set of unit tests for DAOs.
+
+Contact / developer notes
+-------------------------
+If you want me to implement any of the next steps, tell me which one to prioritize. If you want the project refactored into a more strictly OO architecture (service layer, DAO interfaces, user domain model with subclassing), I can sketch and implement a phased plan.
+
+End of report.
